@@ -1,10 +1,26 @@
+%% OceanOptics spectrometer wrapper
+%   Version : Release
+%   Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
+%   This code is tested with QE65000, high-resolution, and infrared
+%   spectrometers. It requires the libraries which are available
+%   commercially, and the instrument driver toolbox. It is effectively a
+%   wrapper.
+%
+%   Usage - taking and displaying one spectrum:
+%       oo = oceanoptics();
+%       oo.connect();
+%       s = oo.click();
+%       plot(s.wl,s.spec);
+
 classdef oceanoptics < handle
-    % Note, only implement a single spectrometer at present
+    
     properties (Access=protected)
         % Connection parameters
         spec;
         sI=0;
         cI=0;
+        % Connections to the board temperature and TEC cooler
         bt;
         tec;
         % Internal storage variables - integration time and dark spectrum
@@ -14,8 +30,12 @@ classdef oceanoptics < handle
     end
     
     properties (Dependent=true, Access=public)
-        % Depedant variable - set IT in seconds
+        % Depedant variable - set integration time in seconds
         integration_time;
+    end
+    
+    properties (Dependent=true, SetAccess = private)
+        % Board and CCD temperature
         temperature;
         tec_temperature;
     end
@@ -25,6 +45,7 @@ classdef oceanoptics < handle
         wl;
         eV;
         cm;
+        % Internal dark spectrum
         darkspec=0;
     end
     
@@ -34,18 +55,21 @@ classdef oceanoptics < handle
             obj.spec = icdevice('OceanOptics_OmniDriver.mdd');
             % Connect
             connect(obj.spec);
-            % Set up temperature thing
+            % Set up temperature
             obj.bt = get(obj.spec,'boardtemperature');
             obj.tec= get(obj.spec,'ThermoElectric');
-            % Get wavelengths
+            % Get wavelength range
             obj.wl = invoke(obj.spec, 'getWavelengths',obj.sI,obj.cI);
+            % Convert to eV
             obj.eV = 1239.84193./obj.wl;
+            % Convert to inverse cm
             obj.cm = obj.eV * 8065.54;
             % Set standard integration time
             obj.setIT(obj.it);
         end
         
         function it = get.integration_time(obj)
+            % Read internal integration time
             it = obj.it;
         end
         
@@ -61,6 +85,7 @@ classdef oceanoptics < handle
         end
         
         function t = get.tec_temperature(obj)
+            % Get thermoelectric cooler temperature
             if ~obj.tec_enabled;t=-100;return;end
             try
                 t = invoke(obj.tec,'getDetectorTemperatureCelsius',obj.sI);
@@ -77,29 +102,27 @@ classdef oceanoptics < handle
                 warning('Integration time is over 1 minute');
             end
             if it<100e-6
-                error('Integration time invalid');
+                error("oceanoptics:set_integration_time:too_short",'Integration time is too short');
             end
             obj.setIT(it);
             obj.it = it;
         end
         
         function close(obj)
+            % Clean close/disconnect
             disconnect(obj.spec);
             delete(obj.spec);
         end
         
         function o=click(obj,avs)
+            % Acquire a spectrum, with avs averages
             if nargin < 2
                 avs = 1;
             end
             % Take actual data
-            obj.tec_temperature;obj.tec_temperature;
-            e = tic();
             sd = invoke(obj.spec,'getSpectrum',obj.sI);
             spectra   = zeros(numel(sd),avs);
             spectra(:,1) = sd;
-            t_elapsed = toc(e);
-          %  if t_elapsed < (2*obj.integration_time); warning('Too short?');end
             % Averaging
             a   = avs-1;k=1;
             while a > 0
@@ -108,6 +131,7 @@ classdef oceanoptics < handle
                 sd = invoke(obj.spec,'getSpectrum',obj.sI);
                 spectra(:,k) = sd;
             end
+            % reduce the spectrum
             if avs == 2
                 sd = mean(spectra,2);
             elseif avs >2
@@ -124,24 +148,24 @@ classdef oceanoptics < handle
             o.time    = clock;
             o.avs     = avs;
             % Set dark spectrum (if applicable)
-            if numel(obj.darkspec) == numel(sd);
+            if numel(obj.darkspec) == numel(sd)
                 o.spec = sd - obj.darkspec;
             else
                 o.spec = sd;
             end
-            % Scale to per second
+            % Scale to counts per second
             o.spec = double(o.spec)./(obj.it);
         end
         
         function [o,cur_int]=auto_click(obj,int_range)
-            % This function does not do averaging
+            % Attempt to set an appropriate integration time
             if nargin <2
                 int_range = obj.integration_time;
             end
             if numel(int_range) == 1
                 % Iterative approach
                 cur_int   = int_range;
-                int_range = [0.001, 1];    % 1ms to 10sec
+                int_range = [0.001, 10];    % 1ms to 10sec
             elseif numel(int_range) == 2
                 cur_int   = int_range(2);
             elseif numel(int_range) == 3
@@ -149,12 +173,17 @@ classdef oceanoptics < handle
                 int_range = int_range(1:2);
             end
             attempts = 0;
-            while attempts < 10;
+            % Keep trying here
+            while attempts < 10
                 attempts = attempts+1;
+                % Change integration time
                 obj.integration_time = cur_int;
+                % Read
                 o = obj.click();
+                % Find peak
                 ma = max(o.spec*obj.it);
                 if ma < 60000 && ma > 10000
+                    % In range
                     break;
                 elseif ma > 60000
                     % Overload
@@ -179,11 +208,9 @@ classdef oceanoptics < handle
             end
         end
         
-        
-        
-        
+
         function show(obj,s)
-            % Helper function
+            % Helper function to show a single spectrum
             if nargin == 1
                 s = obj.click();
             end
@@ -210,7 +237,7 @@ classdef oceanoptics < handle
             end
         end
     end
-    
+    %% Protected function
     methods (Access=protected)
         % Internal protected functions
         function setIT(obj,it)
