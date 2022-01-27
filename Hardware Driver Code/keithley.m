@@ -1,10 +1,20 @@
 %% Simple handle for basic measurements from Keithley instruments inplementing SCPI
+%   Version: Beta
+%   Author: Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
 %   For example : K6487 (https://download.tek.com/manual/6487-901-01(B-Mar2011)(Ref).pdf)
 %           or  : K2400 
 %
+%   Usage to read current at 5V:
+%       k = keithley();
+%       k.set_voltage(5);
+%       k.output(1);
+%       C = k.read_current();
+%       k.output(0);
+%
 classdef keithley < handle
     
-    properties
+    properties (Access = private) 
         % Serial port connection
         s
         model
@@ -12,14 +22,15 @@ classdef keithley < handle
     
     methods
         function connect(obj)
-            % Check if open
+            % Check if port is already open
             f = instrfind('port','COM6');
             for i =1:numel(f)
                 fclose(f(i));
                 delete(f(i));
             end
             % Note, 2020 prefers serialport (earlier was serial)
-            obj.s = serial('COM6','BaudRate',19200, 'databits',8, 'parity','none','flowcontrol','none','terminator',newline);
+            obj.s = serial('COM6','BaudRate',19200, 'databits',8, ...
+                'parity','none','flowcontrol','none','terminator',newline);
             fopen(obj.s);
             obj.get_model();
         end
@@ -35,7 +46,7 @@ classdef keithley < handle
             % Need to check return value
             o = sscanf(r,'%fA,%f,%f',3);
             r = struct();
-            % Put into a structure
+            % Put into a structure to return
             if o(1)<9e37
                 r.A = o(1);
             else
@@ -51,6 +62,7 @@ classdef keithley < handle
         end
                 
         function reset(obj)
+            % Reset Keithley
             obj.ser_write('*RST');
         end
         
@@ -79,6 +91,7 @@ classdef keithley < handle
         end
     end
     
+    %% Internal methods
     methods (Access = private)
         
         function get_model(obj)
