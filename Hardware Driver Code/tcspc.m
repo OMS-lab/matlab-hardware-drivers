@@ -1,7 +1,7 @@
 %% PicoQuant Hydraharp control
 %   Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
-%   Date    : 05/09/2017
-%   Version : 0.2
+%   Date    : 22/01/2022
+%   Version : 0.3
 %   License : CC-BY-SA (http://creativecommons.org/licenses/by-sa/4.0/)
 %
 %   This MATLAB class provides a handle-based approach to connecting with
@@ -10,6 +10,11 @@
 %   format.
 %
 %   It is work in progress.
+%
+%   Usage (histogram with default settings):
+%       hh = tcspc();
+%       hh.connect();
+%       data = hh.histogram(1);
 %
 %   Changelog :
 %       24/10/2017 : Added streaming record to photon conversion (PWP)
@@ -23,7 +28,6 @@
 %       21/01/2022 : Added global offset (not sync, channel)     (PWP)
 
 classdef tcspc < handle
-    % TCSPC class
     
     properties (Access=private)
         % Constants related to Hydraharp
@@ -37,12 +41,12 @@ classdef tcspc < handle
         gmax          =         1000*1024^2;   % Maximum photons to record in a single experiment (arbitrary)
         % Internal variables to store current mode, resolution etc. See
         % dependant variables, below.
-        current_mode  =         [];
-        current_res   =         1;
-        current_sync_div =      0;
-        current_sync_cfd =      -1;
+        current_mode        =   [];
+        current_res         =   1;
+        current_sync_div    =   0;
+        current_sync_cfd    =   -1;
         current_sync_offset =   NaN;
-        current_offset = NaN;
+        current_offset      =   NaN;
     end
     
     properties (Dependent=true)
@@ -57,12 +61,11 @@ classdef tcspc < handle
     end
     
     properties
+        % Flag to use multistop mode (if available)
         multistop = false;
     end
     
     methods
-        
-        % Setup and shutdown
         
         function obj=tcspc()
             % TCSPC constructor
@@ -86,7 +89,7 @@ classdef tcspc < handle
         end
         
         function initialize(obj,mode)
-            % Check if it is valid;
+            % Check if supplied mode is valid
             if strcmpi(mode,'HIST')
                 md = obj.MODE_HIST;
             elseif strcmpi(mode,'T3')
@@ -96,8 +99,13 @@ classdef tcspc < handle
             else
                 error('tcspc:Mode:Unrecognised','Mode not recognised.');
             end
-            % Initialize into mode
+            % Check if we're already in this mode
+            if md == obj.current_mode
+                return
+            end
+            % Initialize device into mode
             [ret] = calllib('HHlib', 'HH_Initialize', obj.dev, md, 0);
+            % Check for errors
             if(ret<0)
                 error('tcspc:HHLib:HH_Initialize','HH_Initialize error %s. Aborted.',obj.getError(ret));
             else
@@ -107,7 +115,8 @@ classdef tcspc < handle
         end
         
         function reset(obj)
-            % Attempt to clear flags
+            % Attempt to clear flags and reset the device. Not always
+            % useful
             m = obj.current_mode;
             calllib('HHlib', 'HH_CloseDevice', obj.dev);
             unloadlibrary('HHlib');
@@ -124,10 +133,11 @@ classdef tcspc < handle
                     mode = 'HIST';
                 end
             end
+            % Create pointers to use with call
             Serial     = blanks(8);
             SerialPtr  = libpointer('cstring', Serial);
             
-            % Open
+            % Open the device
             [ret, Serial] = calllib('HHlib', 'HH_OpenDevice', obj.dev, SerialPtr);
             if ret == 0
                 disp(['Opened Device : ', Serial]);
@@ -140,7 +150,8 @@ classdef tcspc < handle
         end
         
         function calibrate(obj)
-            % Run an internal calibration for timebase
+            % Run an internal calibration for timebase. Should wait a few
+            % minutes before running this.
             [ret] = calllib('HHlib', 'HH_Calibrate', obj.dev);
             if(ret<0)
                 error('tcspc:HHLib:HH_Calibrate','HH_calibrate error %s',obj.getError(ret));
@@ -148,8 +159,8 @@ classdef tcspc < handle
         end
         
         % Get and set internal variables
-        
         function m=get.mode(obj)
+            % Get mode
             m = obj.current_mode;
         end
         
@@ -170,7 +181,9 @@ classdef tcspc < handle
         function r = get.resolution(obj)
             % Get current timing resolution in ps
             r = 0;
+            % Create pointer
             reslPtr = libpointer('doublePtr',r);
+            % Make call
             [ret,r] = calllib('HHlib','HH_GetResolution', obj.dev,reslPtr);
             if ret < 0
                 error('tcspc:HHLib:HH_GetResolution','HH_GetResolution : Get Resolution Failed %s',obj.getError(ret));
@@ -180,7 +193,7 @@ classdef tcspc < handle
         
         function set.resolution(obj,resl)
             % Set current timing resolution in ps, acceptable units in
-            % multiples of 2.
+            % multiples of 2 (1,2,4,8,16 etc)
             if logical(log2(resl)~=round(log2(resl)))
                 error('tcspc:set_resl:power2','set.resolution: Resolution must be a power of 2');
             end
@@ -188,11 +201,12 @@ classdef tcspc < handle
                 % Already set
                 return;
             end
-            % Set the binning
+            % Check the binning
             resl = uint8(log2(resl));
             if resl>26
                 error('tscpc:set_resl:out_of_range','set.resolution: Must be in range 0 1 to 2^26ps');
             end
+            % Set the binning
             [ret] = calllib('HHlib','HH_SetBinning', obj.dev,resl);
             if ret < 0
                 error('tcspc:HHLib:HH_SetBinning','HH_SetBinning : Set Binning Failed %s',obj.getError(ret));
@@ -201,7 +215,7 @@ classdef tcspc < handle
         end
         
         function set.sync_div(obj,div)
-            % Set current synchronization div. Should be multiples of 2
+            % Set current synchronization divider. Should be multiples of 2
             if logical(log2(div)~=round(log2(div)))
                 error('tcspc:set_sync_div:power2','set.sync_div: Resolution must be a power of 2');
             end
@@ -209,6 +223,7 @@ classdef tcspc < handle
                 % Already set, skip
                 return;
             end
+            % Check range
             if or(div > 16,div<1)
                 error('tcspc:set_sync_div:out_of_range','set.sync_div : must be in range 1 to 16');
             end
@@ -222,7 +237,7 @@ classdef tcspc < handle
         end
         
         function sd=get.sync_div(obj)
-            % Get current sync div value if available
+            % Get current sync divider value if available
             if obj.current_sync_div == 0
                 warning('tcspc:get_sync_div:no_value','Sync Div value not determinable. It must be set before first use.');
                 sd = 0;
@@ -232,8 +247,8 @@ classdef tcspc < handle
         end
         
         function set.sync_cfd(obj,cfd)
-            % Set current synchronization cfd value. Should be between 0
-            % and 1000
+            % Set current synchronization cfd value. Should be between 0mV
+            % and 1000mV
             cfd = round(cfd);
             if or(cfd>1000,cfd<0)
                 error('tcspc:set_sync_cfd:out_of_range','Sync CFD out of range. Allowable range is 0-1000mV');
@@ -242,7 +257,7 @@ classdef tcspc < handle
                 % Already set, skip
                 return;
             end
-            % Make call - NOTE, ZERO CROSSING SET TO 15 HERE
+            % Make call - NOTE, ZERO CROSSING SET TO 20 HERE
             [ret] = calllib('HHlib','HH_SetSyncCFD', obj.dev,cfd,20);
             if ret < 0
                 error('tcspc:HHLib:HH_SetSyncCFD','HH_SetSyncCFD : Set Sync CFD Failed %s',obj.getError(ret));
@@ -252,7 +267,9 @@ classdef tcspc < handle
         end
         
         function sd=get.sync_cfd(obj)
-            % Get current sync cfd value if available
+            % Get current sync cfd value if available. It cannot be read
+            % from the device programmatically, only from internal
+            % variables.
             if obj.current_sync_cfd == -1
                 warning('tcspc:get_sync_cfd:no_value','Sync CFD value not determinable. It must be set before first use.');
                 sd = 0;
@@ -262,7 +279,7 @@ classdef tcspc < handle
         end
         
         function set.offset(obj,offset)
-            % Set current synchronization offset in NANOSECONDS
+            % Set current zero time offset in NANOSECONDS
             offset = round(offset);
             if offset == obj.current_offset
                 % Already set, skip
@@ -270,7 +287,7 @@ classdef tcspc < handle
             end
             [ret] = calllib('HHlib','HH_SetOffset', obj.dev,offset);
             if ret < 0
-                error('tcspc:HHLib:HH_SetlOffset','HH_SetOffset : Set Sync channel offset Failed %s',obj.getError(ret));
+                error('tcspc:HHLib:HH_SetOffset','HH_SetOffset : Set Sync channel offset Failed %s',obj.getError(ret));
             end
             % Update
             obj.current_offset = offset;
@@ -289,7 +306,8 @@ classdef tcspc < handle
         
         
         function set.sync_offset(obj,offset)
-            % Set current synchronization offset
+            % Set current synchronization offset (to sync channel
+            % specifically). Limit is +-99ns
             offset = round(offset);
             if or(offset>99999,offset<-99999)
                 error('tcspc:set_sync_offset:out_of_range','Sync offset out of range. Allowable range is 0-1000mV');
@@ -316,11 +334,12 @@ classdef tcspc < handle
             end
         end
         
-        % Primary data-reading functions
+        %% Primary data-reading functions
             
         function CR=countrate(obj,channel)
             % Get countrate for given channel (0=sync,1=ch1,2=ch2)
             CR = 0;
+            % Make a pointer
             CountratePtr = libpointer('int32Ptr', CR);
             if channel > 0
                 [ret, CR] = calllib('HHlib', 'HH_GetCountRate', obj.dev, channel-1, CountratePtr);
@@ -332,15 +351,11 @@ classdef tcspc < handle
             end
         end
         
-        function out = histogram(obj,integration_time,async)
+        function out = histogram(obj,integration_time)
             % Run a histogram experiment with settings as already applied
             % Integration time is in seconds
             if ~strcmpi(obj.mode,'HIST')
                 error('tcspc:histogram:incorrect_mode','Incorrect HH mode selected');
-            end
-            % Check for asynchronous mode
-            if nargin <3
-                async = 0;
             end
             itime = round(integration_time*1000);
             % Clear the device
@@ -350,12 +365,13 @@ classdef tcspc < handle
             ret = calllib('HHlib', 'HH_StartMeas', obj.dev,itime);
             if ret<0;error('tcspc:HHLib:HH_StartMeas','HH_StartMeas : Cannot start measurement %s',obj.getError(ret));end
             
+            % Display message
             disp(['-> Measuring histogram for ',int2str(itime), ' ms']);
             
             % Check for end
             ctcdone = int32(0);
             ctcdonePtr = libpointer('int32Ptr', ctcdone);
-            while (ctcdone==0);[~,ctcdone] = calllib('HHlib', 'HH_CTCStatus', obj.dev, ctcdonePtr);end;
+            while (ctcdone==0);[~,ctcdone] = calllib('HHlib', 'HH_CTCStatus', obj.dev, ctcdonePtr);end
             
             % Finished
             ret = calllib('HHlib', 'HH_StopMeas',obj.dev);
@@ -365,9 +381,11 @@ classdef tcspc < handle
             out  = zeros(3,65536,'uint32');
             % Set x-axis (in picoseconds)
             out(1,:) = 0:obj.resolution:(65535*obj.resolution);
-            % Read from each channel
+            % Read from each channel (0 and 1)
             for i =0:1
+                % Make the buffer
                 bufferptr = libpointer('uint32Ptr', out(i+2,:));
+                % Get the histogram
                 [ret,out(i+2,:)] = calllib('HHlib', 'HH_GetHistogram', obj.dev, bufferptr, i, 0);
                 if ret<0;error('tcspc:HHLib:HH_GetHistogram','HH_GetHistogram : Cannot get histogram measurement %s',obj.getError(ret));end
             end
@@ -377,7 +395,8 @@ classdef tcspc < handle
         end
         
         function [global_buffer,timing]=tttr(obj,integration_time,tic_val)
-            % Run a tttr experiment, return data
+            % Run a tttr (time-tagged time-resolved) experiment and return the data
+            
             % Check mode
             if strcmpi(obj.current_mode,'HIST')
                 error('tcspc:Mode:incorrect','Hydraharp in incorrect operation mode - set to T2 or T3');
@@ -386,13 +405,15 @@ classdef tcspc < handle
             if nargin<3
                 tic_val = tic;
             end
+            % Check multistop mode
             if obj.multistop
                 ms = ' multistop enabled';
             else
                 ms = '';
             end
             disp(['Starting TTTR experiment (',obj.mode, ' mode',ms,')']);
-            % Enable markers
+            
+            % Enable marker inputs
             ret = calllib('HHlib', 'HH_SetMarkerEnable', obj.dev, 1,1,1,1);
             if ret<0;error('tcspc:HHLib:HH_SetMarkerEnable','HH_SetMarkerEnable : Cannot enable markers %s',obj.getError(ret));end
             ret = calllib('HHlib', 'HH_SetMarkerEdges', obj.dev, 1,1,1,1);
@@ -400,7 +421,8 @@ classdef tcspc < handle
             ret = calllib('HHlib', 'HH_SetMarkerHoldoffTime', obj.dev, 1e5);
             if ret<0;error('tcspc:HHLib:HH_SetMarkerHoldoffTime','HH_SetMarkerHoldoffTime : Cannot set marker holdofftime %s',obj.getError(ret));end
             
-            %Constants for mode and converion
+            %Constants for mode and conversion. T2 is every tag, T3 does
+            %not count sync pulses.
             if strcmpi(obj.current_mode,'T2')
                 modeN=uint8(2);
                 if obj.multistop
@@ -412,7 +434,7 @@ classdef tcspc < handle
             end
             
             
-            % Global (outer) buffer
+            % Global (outer) buffer using "photons" class for data
             global_buffer = photons(modeN);
             global_buffer.preallocate(obj.gmax);
             gpos          = 1;
@@ -466,7 +488,8 @@ classdef tcspc < handle
                         warning('tcspc:tttr:Buffer_Full','Main Record Buffer is full.');
                         break;
                     end
-                    % Convert
+                    % Convert using mex complied record to photon
+                    % conversion
                     if obj.multistop
                         [p,state] = stream_multistop_mex(buffer(1:nactual),state);
                     else
@@ -495,11 +518,10 @@ classdef tcspc < handle
             % Ended, stop
             timing.stop = toc(tic_val);
             obj.stop();
+            
             % Crop down
             global_buffer.shrink();
-           % cycles                = state(4);
             global_buffer.periods = state(5:end);
-            %if cycles > 0;fprintf('Acquired %d cycles\n',cycles);end
             
         end
         
@@ -508,7 +530,7 @@ classdef tcspc < handle
             if (ret<0);error('tcspc:HHLib:HH_StopMeas','HH_stopMeas failed %s',obj.getError(ret));end
         end
         
-        % Helper functions
+        %% Helper functions
         
         function auto_configure(obj)
             % Automatically set CFD, divider, resolution.
