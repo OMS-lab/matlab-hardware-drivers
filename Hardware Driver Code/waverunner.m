@@ -78,6 +78,7 @@ classdef waverunner < handle
         end
         
         function o=memory_length(obj,s)
+            % Read or write memory length
             if obj.ml > 0
                 o = obj.ml;
             else
@@ -91,6 +92,7 @@ classdef waverunner < handle
                 end
             end
             if nargin > 1
+                % Set memory length
                 if o ~= s
                     if s >= 1000
                         s = s/1000;
@@ -107,6 +109,7 @@ classdef waverunner < handle
         end
         
         function o=offset(obj)
+            % Get voltage offset
             obj.write('OFST?');
             o = str2double(obj.readstring());
         end
@@ -124,7 +127,7 @@ classdef waverunner < handle
             for i =1:numel(src)
                 % Set channel
                 obj.channel = src(i);
-                % Set points
+                % Set number of points to read points
                 obj.write(['DTPOINTS ',int2str(meml)]);
                 % Check points
                 obj.write('DTPOINTS?');
@@ -141,6 +144,7 @@ classdef waverunner < handle
         end
         
         function o= get.channel(obj)
+            % Get the current input channel.
             if obj.ch>0
                 o = obj.ch;
             else
@@ -152,6 +156,7 @@ classdef waverunner < handle
         end
         
         function set.channel(obj,ch)
+            % Set the current input channel
             if ch ~= obj.ch
                 obj.write(['WAVESRC CH',int2str(ch)]);
                 obj.ch = ch;
@@ -159,6 +164,7 @@ classdef waverunner < handle
         end
         
         function o=get.timescale(obj)
+            % Readf the timescale
             if obj.ts > 0
                 o = obj.ts;
             else
@@ -169,6 +175,7 @@ classdef waverunner < handle
         end
         
         function o=get.voltscale(obj)
+            % Read the voltage scale
             if obj.vs(obj.ch) > 0
                 o = obj.vs(obj.ch);
             else
@@ -179,7 +186,7 @@ classdef waverunner < handle
         end
                
     end
-    % Low level commands
+    %% Low level commands
     methods (Access=private)
         
         % Write to serial port (append terminator)
