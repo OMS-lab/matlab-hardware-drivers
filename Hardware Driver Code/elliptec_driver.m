@@ -1,5 +1,6 @@
 classdef elliptec_driver < handle
     %% ThorLabs Elliptec Driver
+    %
     %   Control via enumerated serial port
     % 	Follow protocol on https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=ELL
     %   V2: Split off between driver and individual stage controller
@@ -30,7 +31,8 @@ classdef elliptec_driver < handle
     
     methods
         function obj= elliptec_driver(address,com_port)
-            % elliptec_rotation_stage(address,com_port) : Initialise the connection and identify the device. Pass address of device, and com port.
+            % elliptec_rotation_stage(address,com_port) : 
+            % Initialise the connection and identify the device. Pass address of device, and com port.
             if nargin < 1
                 address = 0;
                 warning("elliptec_driver:no_address",'No address provided, assuming 0');
@@ -76,8 +78,10 @@ classdef elliptec_driver < handle
             % Get device information at the given address, including serial number etc.
             a = obj.query('in');
             % Interpret response
-            o = struct('type', ['ELL',int2str(hex2dec(a(1:2)))],'serial_number',a(3:10),'year_of_manufacture',a(11:14),'firmware',a(15:16),...
-                'hardware_version',a(17:18),'travel',hex2dec(a(19:22)),'pulse_per_mu',hex2dec(a(23:end)));
+            o = struct('type', ['ELL',int2str(hex2dec(a(1:2)))],...
+                'serial_number',a(3:10),'year_of_manufacture',a(11:14),...
+                'firmware',a(15:16),'hardware_version',a(17:18),...
+                'travel',hex2dec(a(19:22)),'pulse_per_mu',hex2dec(a(23:end)));
             % Capture conversion constant
             if o.pulse_per_mu > 0
                 % Standard stage
@@ -177,6 +181,9 @@ classdef elliptec_driver < handle
                 pause(0.1);
             end
         end
+    end
+    %% Internal send/recieve methods
+    methods (Access=private)
         
         function send(obj,cmd)
             % Send data over the serial port
