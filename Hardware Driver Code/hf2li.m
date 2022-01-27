@@ -1,19 +1,25 @@
-classdef hf2li < handle %#ok<*INUSD>
-    % Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
-    % Date    : 05/01/2018
-    % License : 
-    %
-    % Class wrapper for ziDAQ, Zurich Instruments HF2 lock-in amplifier
-    % Most of the lock-in settings are controlled through the dedicated
-    % ziControl software - here we seek to implement the bare minimum to
-    % run an experiment:
-    %   - connecting to and disconnecting from the lock-in
-    %   - reading values from the lockin demodulators
-    %   - setting auxiliary voltage and digital outputs
+%% Zurich Instruments HF2LI class wrapper
+%
+% Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
+% Class wrapper for ziDAQ, Zurich Instruments HF2 lock-in amplifier
+% Most of the lock-in settings are controlled through the dedicated
+% ziControl software - here we seek to implement the bare minimum to
+% run an experiment:
+%   - connecting to and disconnecting from the lock-in
+%   - reading values from the lockin demodulators
+%   - setting auxiliary voltage and digital outputs
+% 
+%   Usage:
+%       li = hf2li();
+%       s1 = li.getValue(1);
+%       disp(s1.x);
+%       
+classdef hf2li < handle
     
     properties (Access=protected)
         i_status = 0; % Connected and working?
-        i_device = 'DEV915'; % String
+        i_device = 'DEV915'; % Device name to connect to
     end
     
     properties (SetAccess=protected, GetAccess=public, Dependent=true)
@@ -22,6 +28,7 @@ classdef hf2li < handle %#ok<*INUSD>
     end
     
     properties (Dependent = true)
+        % If using the HF2TA pre-amplifier
         preampV;
     end
     
@@ -52,15 +59,20 @@ classdef hf2li < handle %#ok<*INUSD>
             end
         end
         
-        function setSensitivity(obj,lin, value)
+        function setSensitivity(obj,lin, value) %#ok<INUSD>
             % Set the input level (sensitivity)
+            % TODO: Not yet implemented
         end
-
+        
         function o=getValue(obj, demod)
             % Get the output from one of the 6 demodulators
             % parameter is x,y,r,t (4 x 64bit numbers)
-            if obj.i_status==0; error('hf2li:notConnected','Not connected');end;
-            if demod < 1 || demod > 6; error('hf2li:getValue:demodNotInRange','Demodulator not in range 1 to 6');end;            % Start from 0
+            if obj.i_status==0
+                error('hf2li:notConnected','Not connected');
+            end
+            if demod < 1 || demod > 6
+                error('hf2li:getValue:demodNotInRange','Demodulator not in range 1 to 6');
+            end
             demod = demod -1;
             % Get sample
             o   = ziDAQ('getSample',['/',obj.i_device,'/demods/',int2str(demod),'/sample']);
@@ -76,7 +88,7 @@ classdef hf2li < handle %#ok<*INUSD>
         
         function o=status(obj) %#ok<*STOUT>
             % Check for overloads etc
-            if obj.i_status==0; error('hf2li:notConnected','Not connected');end;           % Start from 0
+            if obj.i_status==0; error('hf2li:notConnected','Not connected');end           % Start from 0
             b=dec2bin(ziDAQ('getDouble',['/',obj.i_device,'/STATUS/FLAGS/BINARY']),13);
             % Handcode
             o.error           = str2double(b)>0;
@@ -97,9 +109,9 @@ classdef hf2li < handle %#ok<*INUSD>
         function setAux(obj, auxport, voltage)
             % set an auxiliary output voltage on one of the 4 outputs. Note
             % pre-amp has one too (5).
-            if obj.i_status==0; error('hf2li:notConnected','Not connected');end;           % Start from 0
-            if auxport < 1 || auxport > 2; error('hf2li:setAux:auxNotInRange','Aux not in range 1-2');end;
-            if voltage < -10 || voltage > 10; error('hf2li:setAux:voltageOutOfRange','Voltage out of range (plus/minus 10V)');end;
+            if obj.i_status==0; error('hf2li:notConnected','Not connected');end           % Start from 0
+            if auxport < 1 || auxport > 2; error('hf2li:setAux:auxNotInRange','Aux not in range 1-2');end
+            if voltage < -10 || voltage > 10; error('hf2li:setAux:voltageOutOfRange','Voltage out of range (plus/minus 10V)');end
             port = int2str(auxport - 1);
             voltage = double(min(10,max(-10,voltage)));
             % We set the output to be fixed (rather than derived)
@@ -110,31 +122,35 @@ classdef hf2li < handle %#ok<*INUSD>
         
         function o=getAux(obj)
             % Read a voltage from one of the 2 aux ports
-            if obj.i_status==0; error('hf2li:notConnected','Not connected');end;           % Start from 0
+            if obj.i_status==0; error('hf2li:notConnected','Not connected');end           % Start from 0
             o = ziDAQ('getAuxInSample',['/',obj.i_device,'/auxins/0/sample']);
         end
         
-        function o=getDIO(obj, dioport)
+        function o=getDIO(obj)
             % Read from one of the 32 DIO ports. Note upper 16 are
             % bidirectional - a read forces it to be a read!
-            if obj.i_status==0; error('hf2li:notConnected','Not connected');end;           % Start from 0
+            if obj.i_status==0; error('hf2li:notConnected','Not connected');end           % Start from 0
             d = ziDAQ('getDIO',['/',obj.i_device,'/dios/0/sample']);
             o = dec2bin(d.bits);
         end
         
-        function setDIO(obj, dioport, value)
+        function setDIO(obj, dioport, value) %#ok<INUSD>
             % Set the value of one of the 16 DIO ports. Setting a value
             % will force it to be an output.
+            % TODO: Implement
         end
         
         function set.preampV(obj,voltage)
             % set an auxiliary output voltage
-            if obj.i_status==0; error('hf2li:notConnected','Not connected');end;           % Start from 0
-            if voltage < -10 || voltage > 10; error('hf2li:setAux:voltageOutOfRange','Voltage out of range (plus/minus 10V)');end;   
+            if obj.i_status==0; error('hf2li:notConnected','Not connected');end           % Start from 0
+            if voltage < -10 || voltage > 10 
+                error('hf2li:setAux:voltageOutOfRange','Voltage out of range (plus/minus 10V)');
+            end
             ziDAQ('setDouble',['/',obj.i_device,'/zctrls/0/tamp/biasout'],voltage);
         end
         
         function v=get.preampV(obj)
+            % Get preamp voltage
             v = ziDAQ('getDouble',['/',obj.i_device,'/zctrls/0/tamp/biasout']);
         end
     end
