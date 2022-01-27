@@ -1,4 +1,7 @@
 %% MATLAB Wrapper for low-level communication with the ACS/PI SPiiplus motion controller
+%   Version: beta
+%   Author: Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
 %   Connects via tcpip, reimplements licensed low-level control.
 %   This implements a minimum working example, with most error handling
 %   etc. not implemented.
@@ -8,11 +11,13 @@
 %       s.connect();    % Connect via tcpip with default commands
 %       s.enable(0);    % Enable axis 0
 %       s.position;     % Get relative position.
+%
 classdef spiiplus < handle
     
     properties (Access = private)
         % TCPIP connection variable, private
         connection;
+        % Flag to run in simulated mode
         simulate = true;
         fifo_packets = {};
     end
@@ -24,24 +29,24 @@ classdef spiiplus < handle
         % Constants for communications
         server_address = "10.0.0.100";
         server_port    = 701;
-
+        % Internal soft limits for movement
         softlim = [[-51,51];[-51,51];[-5,3]];
-    
-    
     end
     
     properties (Dependent=true)
         % High-level position (3D) variable
         position;
         synchronous;
-        velocity
+        velocity;
     end
     
     properties (Access = private)
+        % Internal flag for synchronous motion
         i_synchronous = false;
     end
     
-    properties 
+    properties
+        % Specific position list for our experiments
         zero         = [0,0,0];
         positions = struct('P1',[-41.5 41.5 0],...
         'P2',[-41.5 21.5 0],...
@@ -69,7 +74,9 @@ classdef spiiplus < handle
     methods
         % High-level function for getting and setting position and setting
         % the zero
+        
         function p = get.position(obj)
+            % Get current position
             p = [0,0,0];
             for i = 0:2
                 p(i+1) = obj.query_rpos(i);
@@ -78,22 +85,26 @@ classdef spiiplus < handle
         end
         
         function set.position(obj,posn)
+            % set position, and start move
             if numel(posn) ~= 3
                 error('Need 3 axes');
             end
             posn = posn + obj.zero;
             
-            %check within soft limits
+            %check within soft limits and coerece
            if ~isempty(posn(posn(:) > obj.softlim(:,2))) || ~isempty(posn(posn(:) < obj.softlim(:,1)))
                disp('Set position exceeds soft limit - setting to soft limit');
                posn(posn(:) > obj.softlim(:,2)) = obj.softlim(posn(:) > obj.softlim(:,2),2);
                posn(posn(:) < obj.softlim(:,1)) = obj.softlim(posn(:) < obj.softlim(:,1),1);               
            end
-            obj.ptp([0,1,2],posn);
+           %
+           obj.ptp([0,1,2],posn);
         end
         
         function v = get.velocity(obj)
+            % Read the velocity (maximum) for the axis
             r = obj.send_resp(obj.wrap_command('COMMAND',obj.request_binary_read(8,'VEL',0,2)));
+            % Convert data to 3-vector
             d = reshape(r,8,3);
             v = zeros(3,1);
             for i =1:3
@@ -110,9 +121,9 @@ classdef spiiplus < handle
                 yzero = obj.query_rpos(1);
                 zzero = obj.query_rpos(2);
             elseif and(nargin < 3,numel(xzero) == 3)
+                xzero = xzero(1);
                 yzero = xzero(2);
                 zzero = xzero(3);
-                xzero = xzero(1);
             end                
             obj.zero = [xzero,yzero,zzero];
         end
@@ -126,18 +137,20 @@ classdef spiiplus < handle
             obj.find_home(1,1,speed);
             obj.find_home(2,1,speed);
             pause(120);
-            %assign values
+            % Assign values
             pos = obj.position;
-            pos = pos + [15,15,-4];   %arbitrary offset
+            % Arbitrary offset to bring towards the centre
+            pos = pos + [15,15,-4];   
             
             %set new zero position
             obj.zero = pos;
             
+            % Move to zero
             obj.position = [0,0,0];
-            
-
         end
     end
+    
+    %% Non-movement commands, accessible
     
     methods
         % Mid-level functions
@@ -146,8 +159,8 @@ classdef spiiplus < handle
             if isa(obj.connection,'tcpclient')
                 return;
             end
+            % Make connection
             obj.connection = tcpclient(obj.server_address,obj.server_port);
-          %  configureCallback(obj.connection,"terminator",@obj.recv)
             obj.simulate = false;
         end
         
@@ -160,15 +173,11 @@ classdef spiiplus < handle
         
         function response = enable_all(obj)
             % P73 -> Enable all motor axis
-            body = sprintf('ENABLE 0');
-            cmd  = obj.wrap_command('COMMAND',body);
-            response = obj.acksend(cmd);
-            body = sprintf('ENABLE 1');
-            cmd  = obj.wrap_command('COMMAND',body);
-            response = obj.acksend(cmd);
-            body = sprintf('ENABLE 2');
-            cmd  = obj.wrap_command('COMMAND',body);
-            response = obj.acksend(cmd);
+            for i = 0:2
+                body = sprintf('ENABLE %d',i);
+                cmd  = obj.wrap_command('COMMAND',body);
+                response = obj.acksend(cmd);
+            end
         end
         
         function response = disable(obj,axis)
@@ -180,15 +189,11 @@ classdef spiiplus < handle
 
         function response = disable_all(obj)
             % P73 -> Disable all motor axis
-            body = sprintf('DISABLE 0');
-            cmd  = obj.wrap_command('COMMAND',body);
-            response = obj.acksend(cmd);
-            body = sprintf('DISABLE 1');
-            cmd  = obj.wrap_command('COMMAND',body);
-            response = obj.acksend(cmd);
-            body = sprintf('DISABLE 2');
-            cmd  = obj.wrap_command('COMMAND',body);
-            response = obj.acksend(cmd);
+            for i =0:2
+                body = sprintf('DISABLE %d',i);
+                cmd  = obj.wrap_command('COMMAND',body);
+                response = obj.acksend(cmd);
+            end
         end
         
         function out = status(obj)
@@ -212,6 +217,7 @@ classdef spiiplus < handle
         end
         
         function r= in_pos(obj)
+            % Check if all axes are at target position
             r = obj.status();
             r = all([r.inpos]);
         end
@@ -237,6 +243,7 @@ classdef spiiplus < handle
             cmd  = obj.wrap_command('COMMAND',body);
             % Send
             response = obj.acksend(cmd);
+            % Wait if synchronous move requested
             if obj.i_synchronous
                 while ~obj.in_pos
                   pause(5e-3);
@@ -244,17 +251,12 @@ classdef spiiplus < handle
             end
         end
 
-       function response = find_home(obj,axis,method,speed)
-           %homing using method 1 or 2
-           if method > 2
-               error('Method must be 1 or 2')
-           end
-            ax = sprintf('%d,',axis);
-            met = sprintf('%d,',method);
-            vel = sprintf('%d,',speed);
-
-            
-            body = sprintf('HOME %s, %s, %s',ax,met,vel);
+        function response = find_home(obj,axis,method,speed)
+            %homing using method 1 or 2
+            if method > 2
+                error("spiiplus:find_home:unknown_method",'Method must be 1 or 2');
+            end
+            body = sprintf('HOME %d, %d, %d',axis,method,speed);
             % Wrap command
             cmd  = obj.wrap_command('COMMAND',body);
             % Send
@@ -266,14 +268,16 @@ classdef spiiplus < handle
             body = sprintf('?RPOS(%d)',axis);
             cmd  = obj.wrap_command('COMMAND',body);
             [d,response] = obj.send_resp(cmd);
+            % Convert from string to number
             if response
                 d=str2double(char(d));
             else
-                error('Failed position request');
+                error("spiiplus:query_rpos:fail",'Failed position request');
             end
         end
                 
         function set.synchronous(obj,val)
+            % TODO: Sort out synchronous and asynchronous motion.
             if val
                 obj.i_synchronous = true;
 %                 obj.acksend(obj.wrap_command('COMMAND','DISPCH = -2'));                 % Set all channels
@@ -289,12 +293,14 @@ classdef spiiplus < handle
         end
         
         function o = get.synchronous(obj)
+            % Get internal synchronous state
             o = obj.i_synchronous;
         end
         
     end
     
-    methods %(Access = private)
+    %% Private internal
+    methods (Access = private)
         % Low-level communication functions
         function [cmd, out_id] = wrap_command(obj,type, command_body)
             % Create a "safe-format" packet to send
