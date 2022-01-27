@@ -2,11 +2,19 @@
 
 A collection of hardware drivers written in MATLAB, primarily related to control and measurement using automated microscopy.
 
+These drivers are commented, but are often implemented for specific applications. As such, they will probably need work to be adapted to other uses.
+
 ## Installation
 
-Most drivers can be used independently. Usage is given in each class.
+Most drivers can be used independently. Usage is given in each class. Some drivers require additional packages, such as dotnet files, dll files, or low-level drivers. These are generally labelled.
+
+## Authors
+
+Most drivers are written by Patrick Parkinson (patrick.parkinson@manchester.ac.uk), but with contributions from Stephen Church, Juan Alanis, Stefan Skalsky.
 
 ## Drivers included
+
+The drivers are provided in the Hardware Driver Code folder. Below, the driver files are listed with links to the manufacturer website.
 
 - **[Acton 2150 spectrometer](https://www.princetoninstruments.com/wp-content/uploads/2020/04/SpectraPro_Datasheet.pdf)** acton2150.m
 - **[Attocube ANC350 controller](https://www.attocube.com/downloads/anc350-piezo-motion-und-readout-controller.pdf)** anc350.m
