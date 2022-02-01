@@ -1,55 +1,69 @@
-classdef stepper_motor < thorlabs_serial
-    % BSC101 controller from Mark
-    % Driver developed 20/05/2016 [PWP]
-    % V1.1 : Added backlash and softlimit [19/07/2016 PWP]
-    % V1.2 : Added "cutoff" no movement [27/07/2016 PWP]
+%% BSC101 Stepper Motor Controller (ThorLabs)
+%
+% Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
+% Class wrapper for the BSC101 stepper motor (one-channel). Based on the
+% "thorlabs_serial" class.
+% 
+%   Usage (to move to position)
+%       step = BSC101_stepper_motor();
+%       step.connect();
+%       step.position = 10;
+
+
+classdef BSC101_stepper_motor < thorlabs_serial
     
     properties (Access=protected)
-        % USB address
+        % Address of the first device over serial
         destaddr  = uint8(hex2dec('50'));
         
-	
-        % Stage encoding values in mm(depends on controller)
+        % Stage encoding values in mm (depends on controller)
         enc_scale = 128*200;
         vel_scale = 128*200;
     end
     
     properties (SetAccess=protected)
-        % Stage settings
+        % Stage settings, read-only
         zero=0;
         
     end
+    
     properties
        % User changable 
        backlash = 0.1;
+       % Minimum increment (in mm)
        cutoff   = 1e-3;
+       % Soft limits of motion
        softlimit = [7 17];
     end
     
     properties (Access=public, Dependent=true)
+        % Dependant
         position;
     end
     
     methods
+        
         function connect(obj,portname)
+            % Make connection to the device, using inherited
+            % thorlabs_serial class
             obj.portname = portname;
             obj.ba = obj.destaddr;
             obj.ack  = 0;
+            % Super command
             obj.establish;
+            
             % Enable if reqd
             st = obj.status;
             if not(st.status.enabled)
                 obj.channelEnable();
             end
-            % Home if reqd
-            if not(st.status.homed)
-             %   obj.home();
-            end
-            % Don't let it go crazy!
-            obj.zero = obj.getposition();
+            % Use initial position as internal zero - avoids accidents.
+            obj.zero = obj.position;
         end
         
-        function close(obj)
+        function delete(obj)
+            % Clean shutdown
             obj.shut();
         end
         
@@ -76,18 +90,11 @@ classdef stepper_motor < thorlabs_serial
             o.status.forwardlimit = bitand(sta(1),1)   > 0;
         end
         
-        function [p, pos]=getposition(obj)
-        % Get axis position in real units (and encoder units)
-        pl = obj.generateHeader(obj.cmd('MOT_REQ_POSCOUNTER'),'01','00',obj.destaddr);
-        obj.write(pl);
-        o   = obj.read(obj.cmd('MOT_GET_POSCOUNTER'));
-        pos = o(9:12);
-        p   = obj.enc2pos(pos)-obj.zero;
-        end
-        
         function setZero(obj,position)
+            % Set an internal zero position
             if nargin < 2
-                position = obj.getposition()+obj.zero;
+                % Current position if not supplied
+                position = obj.position+obj.zero;
             end
             obj.zero = position;
         end
@@ -105,6 +112,7 @@ classdef stepper_motor < thorlabs_serial
         end        
         
         function move(obj,position,force)
+            % Move the stage
             if nargin<3
                 force = 0;
             end
@@ -112,25 +120,33 @@ classdef stepper_motor < thorlabs_serial
             if (((position+obj.zero) < min(obj.softlimit)) || ((position+obj.zero) > max(obj.softlimit))) && not(force)
                 error('stepper_motor:move:out_of_range','Out of range of soft-limit');
             end
+            % Read current position
             curpos = obj.position;
-            % Check if worth it (cutoff)
+            
+            % Check if move is larger than cutoff resolution
             if abs(position - curpos) < obj.cutoff
                 return
             end
+            
             % Implement backlash
             if (position < curpos) && not(force) && (obj.backlash > 0)
                 obj.move(position-obj.backlash, 1);
             end
-            % Only synchronous movements
+            
+            % Only synchronous movements permitted
             pos = obj.pos2enc(position+obj.zero);
             cmd = obj.cmd('MOT_MOVE_ABSOLUTE');
+            
             % Make header
             header = obj.generateHeader(cmd,'06','00',obj.destaddr+hex2dec('80'));
+            
             % Make payload
             data   = uint8([obj.chan, hex2dec('00'), pos']);
             pl     = [header,data];
+            
             % Send
             obj.write(pl);
+            
             % Wait
             obj.read(obj.cmd('MOT_MOVE_COMPLETED'));
         end
@@ -148,10 +164,15 @@ classdef stepper_motor < thorlabs_serial
         end
         
         % Helper functions (dependent)
-        function o=get.position(obj)
-            % Get current position
-            o = obj.getposition();
+        function p=get.position(obj)
+            % Get axis position in real units (and encoder units)
+            pl = obj.generateHeader(obj.cmd('MOT_REQ_POSCOUNTER'),'01','00',obj.destaddr);
+            obj.write(pl);
+            o   = obj.read(obj.cmd('MOT_GET_POSCOUNTER'));
+            pos = o(9:12);
+            p   = obj.enc2pos(pos)-obj.zero;
         end
+        
         function set.position(obj, val)
             % Set current position
             obj.move(val);
@@ -164,15 +185,20 @@ classdef stepper_motor < thorlabs_serial
         end
         
         function m=get_metadata(obj)
+            % Metadata structure
             m = struct('zero',obj.zero, 'resolution',obj.cutoff);
         end
     end
     
     methods (Access=protected)
+        %% Internal methods
         function p = enc2pos(obj,enc)
+            % Convert encoder position to physical position
             p=sum(enc.*256.^[0,1,2,3])/obj.enc_scale;
         end
+        
         function by = pos2enc(obj,pos)
+            % Convert physical position to encoder value
             pos = uint64(pos*obj.enc_scale);
             bs  = [0,8,16,24];
             by  = zeros(4,1,'uint8');
@@ -180,12 +206,16 @@ classdef stepper_motor < thorlabs_serial
                 by(i)=bitshift(bitand(pos,bitshift(255,bs(i))),-bs(i));
             end
         end
+        
         function v = enc2vel(obj,enc)
+            % Convert encoder velocity to physical velocity
             conv = 0:(length(enc)-1);
             C = obj.vel_scale;
             v=sum(enc.*256.^conv)/C;
         end
+        
         function by = vel2enc(obj,vel)
+            % Convert physical velocity to encoder velocity
             C = obj.vel_scale;
             vel = uint64(vel*C);
             bs  = [0,8,16,24];

@@ -1,4 +1,16 @@
+%% ThorLabs APT rotation stage driver (over thorlabs_serial VCP)
+%
+% Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
+% Used for communication with the APT rotation stage controller.
+%
+%   Usage:
+%       rs = rotation_stage();
+%       rs.connect();
+%       rs.position = 100;
+%
 classdef rotation_stage < thorlabs_serial
+    
     properties (Access=protected)
         % USB address
         destaddr  = uint8(hex2dec('50'));
@@ -10,20 +22,26 @@ classdef rotation_stage < thorlabs_serial
     end
     
     properties (Access=public, Dependent=true)
+        % Dependent variable
         position;
     end
+    
     methods
+        %% Public methods
         function connect(obj,portname)
+            % Connect to device
             if nargin < 2
                 obj.portname = 'COM14';
             else
                 obj.portname = portname;
             end
             obj.ba = obj.destaddr;
+            % Call super
             obj.establish;
         end
         
-        function close(obj)
+        function delete(obj)
+            % Clean close
             delete(obj.s);
             obj.s = [];
             obj.shut();
@@ -86,6 +104,7 @@ classdef rotation_stage < thorlabs_serial
         end
         
         function complete(obj)
+            % Check if movement completed
             obj.read(obj.cmd('MOT_MOVE_COMPLETED'));
         end
         
@@ -114,10 +133,14 @@ classdef rotation_stage < thorlabs_serial
     end
     
     methods (Access=protected)
+        %% Private/internal functions
         function p = enc2pos(obj,enc)
+            % Convert encoded to physical position
             p=sum(enc'.*256.^[0,1,2,3])/obj.enc_scale;
         end
+        
         function by = pos2enc(obj,pos)
+            % Convert physical position to encoder
             pos = uint64(pos*obj.enc_scale);
             bs  = [0,8,16,24];
             by  = zeros(4,1,'uint8');
@@ -125,12 +148,16 @@ classdef rotation_stage < thorlabs_serial
                 by(i)=bitshift(bitand(pos,bitshift(255,bs(i))),-bs(i));
             end
         end
+        
         function v = enc2vel(obj,enc)
+            % Convert encoded velocity to physical
             conv = 0:(length(enc)-1);
             C = obj.vel_scale;
             v=sum(enc'.*256.^conv)/C;
         end
+        
         function by = vel2enc(obj,vel)
+            % Convert physical velocity to encoded
             C = obj.vel_scale;
             vel = uint64(vel*C);
             bs  = [0,8,16,24];

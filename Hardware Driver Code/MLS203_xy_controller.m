@@ -1,14 +1,25 @@
-%% ThorLabs MLS203 XY stage, via BBD203 controller
-%  Controlled via enumerated serial port
-
-classdef xy_controller < thorlabs_serial
+%% ThorLabs MLS203 XY controller (over thorlabs_serial VCP)
+%
+% Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
+% Used for communication with the XY controller stage. Based on
+% thorlabs_serial communication library.
+%
+%   Usage:
+%       xy = MLS203_xy_controller();
+%       xy.connect();
+%       xy.position = [30 30];
+%
+classdef MLS203_xy_controller < thorlabs_serial
+    
     properties (SetAccess=public, GetAccess=public)
-        % 
+        % Public properties
         moving       = [0,0];
         maxVelocity  = [0,0];
         acceleration = [0,0];
         zero         = [0,0];
     end
+    
     properties (Access=protected)
         % Stage specific parameters
         limits   = [0,110;0,75];
@@ -30,11 +41,13 @@ classdef xy_controller < thorlabs_serial
     end
         
     methods
-        % Channel control
+        %% Public methods
+        
         function connect(obj, port)
             % Establish connection via serial port
             obj.portname = port;
             obj.ba       = obj.bayaddr;
+            % Call super
             obj.establish();
             % Check if channels are enabled - if not, enable
             obj.channelEnable(1);
@@ -47,27 +60,34 @@ classdef xy_controller < thorlabs_serial
                     disp('Homing');
                     obj.home(i);
                 end
+                % Ger parameters
                 r = obj.getMoveParams(i);
                 obj.maxVelocity(i) = r.maxVel;
                 obj.acceleration(i) = r.accel;
             end
         end
-        function close(obj)
+        
+        function delete(obj)
             % Close serial object and delete
             fclose(obj.s);
             delete(obj.s);
         end
+        
         function channelEnable(obj,bay)
             % Enable channel (turn on motors)
-            pl = obj.generateHeader(obj.cmd('MOD_REQ_CHANENABLESTATE'),'01','00', obj.bayaddr(bay));
-            obj.write(pl);
+            payload = obj.generateHeader(obj.cmd('MOD_REQ_CHANENABLESTATE'),...
+                '01','00', obj.bayaddr(bay));
+            obj.write(payload);
+            % Check channel state
             o = obj.read(obj.cmd('MOD_GET_CHANENABLESTATE'));
+            % Check if disabled
             if o(4) == 2
-                % If disabled - enable
-                pl = obj.generateHeader(obj.cmd('MOD_SET_CHANENABLESTATE'),'01','01',obj.bayaddr(bay));
-                obj.write(pl);
+                payload = obj.generateHeader(obj.cmd('MOD_SET_CHANENABLESTATE'),...
+                    '01','01',obj.bayaddr(bay));
+                obj.write(payload);
             end
         end
+        
         % Information commands
         function o=status(obj,bay)
             % Obtain status byte for channel, interpret response.
@@ -95,6 +115,7 @@ classdef xy_controller < thorlabs_serial
             o.status.reverseLimit = bitand(sta(1),2)   > 0;
             o.status.forwardLimit = bitand(sta(1),1)   > 0;
         end
+        
         function [p, pos]=getPosition(obj,bay)
             % Get axis position in real units (and encoder units)
             pl = obj.generateHeader(obj.cmd('MOT_REQ_ENCCOUNTER'),'01','00',obj.bayaddr(bay));
@@ -103,6 +124,7 @@ classdef xy_controller < thorlabs_serial
             pos = o(9:12);
             p   = obj.enc2pos(pos)-obj.zero(bay);
         end
+        
         function reply=getMoveParams(obj,bay)
             % Read the current parameters for movements (velocity and
             % acceleration) for the axis given by 'bay'.
@@ -117,6 +139,7 @@ classdef xy_controller < thorlabs_serial
             obj.maxVelocity(bay) = reply.maxVel;
             obj.acceleration(bay)= reply.accel;
         end
+        
         % Movement commands
         function home(obj,bay,force)
             % Check if the axis is homed - if not, perform homing. Operation
@@ -129,6 +152,7 @@ classdef xy_controller < thorlabs_serial
                 obj.read(obj.cmd('MOT_MOVE_HOMED'));
             end
         end
+        
         function setMoveParams(obj,bay,velocity,acceleration)
             % Set the move parameters (velocity and acceleration) for the axis
             % specified by 'bay'
@@ -152,7 +176,8 @@ classdef xy_controller < thorlabs_serial
             payload = [header, data];
             obj.write(payload);
         end
-        function setMove(obj, bay, position, async)
+        
+        function setMove(obj, bay, position)
             % Asynchronous or synchronous movement.
             % Convert values
             position = position + obj.zero(bay);
@@ -164,29 +189,17 @@ classdef xy_controller < thorlabs_serial
             % Calculate encoded position
             pos = obj.pos2enc(position);
             % Generate payload
-           % if async
-           %    cmd=obj.cmd('MOT_SET_MOVEABSPARAMS');
-           % else
                 cmd=obj.cmd('MOT_MOVE_ABSOLUTE');
-           % end
             % Generate the header and data packets
             header = obj.generateHeader(cmd,'06','00',obj.bayaddr(bay+3));
             data   = uint8([obj.chan, hex2dec('00'), pos']);
             pl     = [header,data];
             % Send
             obj.write(pl);
-            % Async?
-            if async==0
-                obj.read(obj.cmd('MOT_MOVE_COMPLETED'));
-            end
+            % Wait for move to complete
+            obj.read(obj.cmd('MOT_MOVE_COMPLETED'));
         end
-        function execute(obj,bay)
-            % Execute an asynchronous movement (for vectorised 2D)
-            pl = obj.generateHeader(obj.cmd('MOT_MOVE_ABSOLUTE'),'01','00',obj.bayaddr(bay));
-            obj.write(pl);
-            obj.moving(bay) = 1;
-            %obj.read(obj.cmd('MOT_MOVE_COMPLETED'));
-        end
+        
         % Wrapper (non-native) commands
         function setZero(obj,xzero,yzero)
             % Internal zero position (in stage units)
@@ -197,57 +210,58 @@ classdef xy_controller < thorlabs_serial
             end
             obj.zero = [xzero,yzero];
         end
-        function process(obj,shape)
-            % Process a shape (produced via shape_generator)
-            for i =1:length(shape)
-                obj.setMove(1,shape(i,2),0);
-                obj.setMove(2,shape(i,3),0);
-            end
-        end
         
-        function load(obj,d)
-            if nargin < 2
-                d=1;
-            end
+        function load(obj,method)
             % Move to load position
+            if nargin < 2
+                method=1;
+            end
+            % Remember old settings
             v_old = obj.v;
             obj.v = 100;
             cp    = obj.p;
-            if d==1
-                p = [cp(1) 35-obj.zero(2)];
-                obj.p = p;
-                p = [110-obj.zero(1) 35-obj.zero(2)];
-                obj.p = p;
+            if method==1
+                posn = [cp(1) 35-obj.zero(2)];
+                obj.p = posn;
+                posn = [110-obj.zero(1) 35-obj.zero(2)];
+                obj.p = posn;
             else
-                p = [110-obj.zero(1) 35-obj.zero(2)];
-                obj.p = p;
+                posn = [110-obj.zero(1) 35-obj.zero(2)];
+                obj.p = posn;
             end
+            % Recall old settings
             obj.v = v_old;
         end
         function p=getPosition2D(obj)
             % Get stage position
             p = [obj.getPosition(1),obj.getPosition(2)];
         end
+        
         function move2D(obj,coords)
             % Do asynchronous move
             obj.setMove(1,coords(1),0);
             obj.setMove(2,coords(2),0);
         end
+        
         % Dependant variable stuff for the important parameters
         function p=get.p(obj)
             p = obj.getPosition2D();
         end
+        
         function set.p(obj,pos)
+            % Set position
             if numel(pos) < 2
                 error('xy_controller:setP:posSize','Must be a 2 element vector');
             end
             obj.move2D(pos);
         end
+        
         function v=get.v(obj)
             r1 = obj.getMoveParams(1);
             r2 = obj.getMoveParams(2);
             v  = [r1.maxVel,r2.maxVel];
         end
+        
         function set.v(obj,vels)
             % Make the same if only one value passed
             if numel(vels) == 1
@@ -260,11 +274,14 @@ classdef xy_controller < thorlabs_serial
             obj.setMoveParams(1,vels(1),r1.accel);
             obj.setMoveParams(2,vels(2),r2.accel);
         end
+        
         function a=get.a(obj)
+            % Acceleration
             r1 = obj.getMoveParams(1);
             r2 = obj.getMoveParams(2);
             a  = [r1.accel,r2.accel];
         end
+        
         function set.a(obj,accels)
             % Make the same if only one value passed
             if numel(accels) == 1

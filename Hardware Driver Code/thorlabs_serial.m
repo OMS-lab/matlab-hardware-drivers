@@ -1,9 +1,15 @@
+%% Serial port driver (VCP) for thorlabs hardware over APT
+%
+% Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
+% Responsible for sending a receiving payloads from the controller. In
+% particular, generate the appropriate acknowledgment command every 50
+% sent.
+%
+% Not intended for direct usage.
+%
 classdef thorlabs_serial < handle
-    % Low level thorlabs serial port control driver.
-    % Responsible for sending a receiving payloads from the controller.
-    % Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
-    % Date    : 13/07/2017
-    % Version : 1.1
+
     properties (Access=protected)
         % Communications protocol options
         portname;
@@ -29,6 +35,7 @@ classdef thorlabs_serial < handle
                     obj.s = obj.portname;
                 else
                 disp('Opening serial port');
+                % TODO: Allow for serialport version
                 obj.s = serial(obj.portname,'BaudRate',115200,...
                     'DataBits',8,...
                     'ByteOrder','littleEndian',...

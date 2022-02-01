@@ -8,12 +8,14 @@
 %   PI E-709 controllers. The purpose is to provide a selection of the most
 %   relevant methods and properties, such as connection, movement, velocity
 %   setting, and low-level commands.
-
+%
+%   This class wraps the provided lower-level commands provided by PI 
+%
 %   Changelog:
 %       15/10/2018 : Allow for reusing existing waveform if it exists (cuts
 %       communcation time by ~10sec/scan. [PWP]
 
-classdef piezo_stage < handle
+classdef E709_piezo_stage < handle
     
     properties (GetAccess=public)
         controllerSerialNumber = '117071743';
@@ -44,7 +46,7 @@ classdef piezo_stage < handle
     
     methods
         % Initialise 
-        function obj=piezo_stage
+        function obj=E709_piezo_stage()
             % Add driver code to the matlab path (make it accessible)
             addpath('C:\Users\Public\PI\PI_MATLAB_Driver_GCS2');
 

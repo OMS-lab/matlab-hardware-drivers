@@ -1,9 +1,14 @@
-%% Driver for Acton2150
-%   Author : Patrick Parkinson
-%   Email  : patrick.parkinson@manchester.ac.uk
-%   V1 date: 26/07/2018
+%% Acton 2150 monochromator driver
 %
-%   General driver for RS232 over USB control of Acton2150 spectrometer
+% Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
+% Class wrapper for the Acton series of monochromators, using RS232 over
+% USB.
+% 
+%   Usage:
+%       spec = acton2150();
+%       spec.wavelength = 500;
+%       
 
 classdef acton2150 < handle
     
@@ -41,6 +46,7 @@ classdef acton2150 < handle
             % If not connected - make connection
             if isempty(obj.s)
                 disp('Initiating connection to port');
+                % TODO: update to serialport object
                 obj.s = serial(obj.port,'baudrate',9600,'databits',8,'parity','none','stopbits',1);
             end
             % We now have  port object - check if open
@@ -75,7 +81,8 @@ classdef acton2150 < handle
         
     end
     
-    methods (Access=public)
+    methods (Access=private)
+        %% Internal methods
         % Write to serial port (append terminator)
         function write(obj,command)
             fwrite(obj.s,[command,char(13)]);

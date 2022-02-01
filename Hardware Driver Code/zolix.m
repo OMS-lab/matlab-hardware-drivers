@@ -1,9 +1,13 @@
-%% Driver for Zolix
-%   Author : Patrick Parkinson
-%   Email  : patrick.parkinson@manchester.ac.uk
-%   V1 date: 14/08/2018
+%% Zolix monochromator
 %
-%   General driver for RS232 over USB control of Zolix spectrometer
+% Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
+% Wrapper for RS232 over USB control of zolix-type monochromator.
+%
+%   Usage:
+%       spec = zolix();
+%       spec.wavelength = 550;
+%
 
 classdef zolix < handle
     
@@ -50,7 +54,9 @@ classdef zolix < handle
             % If not connected - make connection
             if isempty(obj.s)
                 disp('Initiating connection to port');
-                obj.s = serial(obj.port,'baudrate',19200,'databits',8,'parity','none','stopbits',1);
+                % TODO: Update serial to serialport
+                obj.s = serial(obj.port,'baudrate',19200,'databits',8,...
+                    'parity','none','stopbits',1);
             end
             % We now have  port object - check if open
             if ~strcmp(obj.s.status,'open')
@@ -67,7 +73,7 @@ classdef zolix < handle
             % Get grating details
             obj.write('GRATINGS?');
             r = obj.read();
-            p = strfind(r,char(10));
+            p = strfind(r,newline);
             obj.gratings{1} = r(p(1)+3:p(2)-1);
             obj.gratings{2} = r(p(2)+3:p(3)-1);
             obj.gratings{3} = r(p(3)+3:end-3);
@@ -95,9 +101,9 @@ classdef zolix < handle
             wl = sprintf('MOVETO %3.1f',nm);
             obj.write(wl);
             r=obj.read();
-            if isempty(strfind(r,'OK'))
+            if ~contains(r,'OK')
                 disp(r);
-                if strfind(r,'E03')
+                if contains(r,'E03')
                     error('Grating out of range');
                 end
                 error('Could not seek wavelength');
@@ -122,7 +128,7 @@ classdef zolix < handle
             po = sprintf('EXITPORT %d',port);
             obj.write(po);
             r=obj.read();
-            if isempty(strfind(r,'OK'))
+            if ~contains(r,'OK')
                 pause(1);
             end
         end
@@ -138,7 +144,7 @@ classdef zolix < handle
             gr = sprintf('GRATING %d',grating);
             obj.write(gr);
             r = obj.read();
-            if isempty(strfind(r,'OK'))
+            if ~contains(r,'OK')
                 warning('Error in grating move');
                 pause(1);
             end
@@ -156,13 +162,14 @@ classdef zolix < handle
         function home(obj)
             obj.write('GRATINGHOME');
             r = obj.read();
-            if isempty(strfind(r,'OK'))
+            if ~contains(r,'OK')
                 pause(1);
             end
         end        
     end
     
-    methods (Access=public)
+    methods (Access=private)
+        %% Private functions
         % Write to serial port (append terminator)
         function write(obj,command)
             fwrite(obj.s,[command,char(13)]);
