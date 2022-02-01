@@ -1,12 +1,20 @@
-%% pi_motion_controller
-%  Motion controller driver for the C863 Mercury driver
+%% Physik Instruments C863 motion controller
 %
-classdef pi_motion_controller < handle
+% Author  : Patrick Parkinson (patrick.parkinson@manchester.ac.uk)
+%
+% Wrapper around the PI provided MATLAB/GCS drivers.
+%
+%   Usage:
+%       pi = C863_motion_controller();
+%       pi.servo = 1;
+%       pi.position = 50;
+%
+classdef C863_motion_controller < handle
     
     properties
-        % Externally accessible motion controller
-        serial_props = struct('port',"COM7",'baud',38400,'bits',8,'parity',"None",'stop',1,...
-            'terminator',newline);
+        % Externally accessible parameters
+        serial_props = struct('port',"COM7",'baud',38400,'bits',8,...
+            'parity',"None",'stop',1,'terminator',newline);
         % Zero position
         zero = 0;
         % Synchronous
@@ -34,15 +42,17 @@ classdef pi_motion_controller < handle
     
     methods
         % Initialise and open connection
-        function obj=pi_motion_controller()
+        function obj=C863_motion_controller()
             % Check port
             obj.s = check_port(obj.serial_props.port);
             if isempty(obj.s)
+                % TODO: serial to serialport
                 obj.s = serial(obj.serial_props.port,...
                     'BaudRate',obj.serial_props.baud,...
                     'DataBits',obj.serial_props.bits,...
                     'StopBits',obj.serial_props.stop,...
                     'Terminator',obj.serial_props.terminator);
+                % Check function return
                 if ~isa(obj.s,'serial')
                     error('nmc::serial');
                 end
@@ -50,7 +60,7 @@ classdef pi_motion_controller < handle
             if ~strcmp(obj.s.Status,'open')
                 fopen(obj.s);
                 if ~strcmp(obj.s.Status,'open')
-                    error('newport_motion_controller:serial_open',"Unable to open port");
+                    error('C863_motion_controller:serial_open',"Unable to open port");
                 end
             end
             % Read range of motion
@@ -69,14 +79,14 @@ classdef pi_motion_controller < handle
             fclose(obj.s);
         end
         
-        % Get servo status
         function s=get.servo(obj)
+            % Get servo status
             s=obj.query('SVO?');
             s=logical(s(3) == '1');
         end
         
-        % Set servo status
         function set.servo(obj,status)
+            % Set servo status
             status = logical(status);
             if status 
                 st = '1'; 
@@ -86,16 +96,16 @@ classdef pi_motion_controller < handle
             obj.write(['SVO 1 ',st]);
         end
         
-        % Get current position
         function p=get.position(obj)
+            % Get current position
             obj.write('POS?');
             r = obj.read();
             q = sscanf(r,'%d=%f');
             p = q(2);            
         end
         
-        % Home device
         function home(obj)
+            % Home device
             q = obj.query('FRF?');
             if q == "1=1"
                 disp('Already homed');
@@ -104,15 +114,15 @@ classdef pi_motion_controller < handle
             end
         end
         
-        % Check if we are on target (for synchronous)
         function o=on_target(obj)
+            % Check if we are on target (for synchronous)
             q = obj.query('ONT?');
             q = sscanf(q,'%d=%d');
             o = logical(q(2)==1);
         end
         
-        % Set position (immediate move)
         function set.position(obj,p)
+            % Set position (immediate move)
             if all([p>=obj.min,p<=obj.max,obj.servo])
                 obj.write(sprintf('MOV 1 %.4f',p));
             else
@@ -127,27 +137,32 @@ classdef pi_motion_controller < handle
         end
         
         function initialise(obj)
+            % Start up stage
             obj.servo = true;
             obj.home();
         end
         
         function t=get.tau(obj)
+            % Position in picoseconds, not mm
             t = (obj.position - obj.zero)*obj.conv;
         end
         
         function set.tau(obj,t)
+            % Move in picoseconds, not mm
             obj.position = (t/obj.conv + obj.zero);
         end
         
         function set_zero(obj)
+            % Set current position as zero
             obj.zero = obj.position;
         end
             
     end
     
-    % Private read and write functions
+    %% Private read and write functions
     methods (Access = private)
-                function write(obj,str)
+        
+        function write(obj,str)
             str = [str,newline];
             fwrite(obj.s,str);
         end
