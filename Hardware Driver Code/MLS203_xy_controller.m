@@ -239,8 +239,8 @@ classdef MLS203_xy_controller < thorlabs_serial
         
         function move2D(obj,coords)
             % Do asynchronous move
-            obj.setMove(1,coords(1),0);
-            obj.setMove(2,coords(2),0);
+            obj.setMove(1,coords(1));
+            obj.setMove(2,coords(2));
         end
         
         % Dependant variable stuff for the important parameters
