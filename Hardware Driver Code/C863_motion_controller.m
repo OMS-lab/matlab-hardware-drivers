@@ -12,9 +12,6 @@
 classdef C863_motion_controller < handle
     
     properties
-        % Externally accessible parameters
-        serial_props = struct('port',"COM7",'baud',38400,'bits',8,...
-            'parity',"None",'stop',1,'terminator',newline);
         % Zero position
         zero = 0;
         % Synchronous
@@ -25,6 +22,12 @@ classdef C863_motion_controller < handle
         % Range of motion
         min;
         max;
+    end
+    
+    properties (Access = private)
+        % Externally accessible parameters
+        serial_props = struct('port',"COM7",'baud',38400,'bits',8,...
+            'parity',"None",'stop',1,'terminator',newline);
     end
     
     properties (Dependent=true)
@@ -42,7 +45,11 @@ classdef C863_motion_controller < handle
     
     methods
         % Initialise and open connection
-        function obj=C863_motion_controller()
+        function obj=C863_motion_controller(port)
+            % Set port on load
+            if nargin > 0
+                obj.serial_props.port = port;
+            end
             % Check port
             obj.s = check_port(obj.serial_props.port);
             if isempty(obj.s)
@@ -88,8 +95,8 @@ classdef C863_motion_controller < handle
         function set.servo(obj,status)
             % Set servo status
             status = logical(status);
-            if status 
-                st = '1'; 
+            if status
+                st = '1';
             else
                 st = '0';
             end
@@ -101,7 +108,7 @@ classdef C863_motion_controller < handle
             obj.write('POS?');
             r = obj.read();
             q = sscanf(r,'%d=%f');
-            p = q(2);            
+            p = q(2);
         end
         
         function home(obj)
@@ -156,7 +163,7 @@ classdef C863_motion_controller < handle
             % Set current position as zero
             obj.zero = obj.position;
         end
-            
+        
     end
     
     %% Private read and write functions

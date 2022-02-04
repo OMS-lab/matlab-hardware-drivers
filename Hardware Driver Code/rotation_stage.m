@@ -42,8 +42,6 @@ classdef rotation_stage < thorlabs_serial
         
         function delete(obj)
             % Clean close
-            delete(obj.s);
-            obj.s = [];
             obj.shut();
         end
         
