@@ -8,6 +8,8 @@
 %
 % Not intended for direct usage.
 %
+% Requires ThorLabs driver package - https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=Motion_Control&viewtab=1
+
 classdef thorlabs_serial < handle
 
     properties (Access=protected)
