@@ -5,11 +5,11 @@
 % Used for communication with the APT rotation stage controller.
 %
 %   Usage:
-%       rs = rotation_stage();
+%       rs = TDC001_rotation_stage();
 %       rs.connect();
 %       rs.position = 100;
 %
-classdef rotation_stage < thorlabs_serial
+classdef TDC001_rotation_stage < thorlabs_serial
     
     properties (Access=protected)
         % USB address
